@@ -18,14 +18,24 @@ export class UserManager {
 
         // ================= USER JOIN =================
         socket.on("join", (data) => {
-            const userId = this.quizManager.addUser(data.roomId, data.name);
+            const { roomId, name } = data;
 
-            socket.join(data.roomId);
+            const quiz = this.quizManager.getQuiz(roomId);
+            if (!quiz) {
+                socket.emit("error", { message: "Room not found" });
+                return;
+            }
+
+            const userId = this.quizManager.addUser(roomId, name);
+
+            socket.join(roomId);
 
             socket.emit("init", {
                 userId,
-                state: this.quizManager.getCurrentState(data.roomId),
+                state: this.quizManager.getCurrentState(roomId),
             });
+
+            console.log(`User ${name} joined room ${roomId}`);
         });
 
         // ================= ADMIN LOGIN =================
@@ -65,15 +75,17 @@ export class UserManager {
                 socket.emit("quizStateUpdate", state);
             });
 
-            // 🔥🔥 RESET QUIZ (NEW)
-            socket.on("resetQuiz", (data) => {
-                this.quizManager.resetRoom(data.roomId);
+            // 🔥🔥🔥 END QUIZ (HARD DELETE)
+            socket.on("endQuiz", (data) => {
+                const { roomId } = data;
 
-                // Notify ALL players
-                socket.to(data.roomId).emit("reset");
+                this.quizManager.deleteRoom(roomId);
+
+                // notify ALL clients
+                socket.to(roomId).emit("reset");
                 socket.emit("reset");
 
-                console.log(`Room ${data.roomId} reset by admin`);
+                console.log(`Room ${roomId} deleted by admin`);
             });
         });
 

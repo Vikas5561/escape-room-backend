@@ -10,15 +10,25 @@ export class QuizManager {
         this.quizes = [];
     }
 
+    // ================= CREATE QUIZ =================
+    addQuiz(roomId: string) {
+        if (this.getQuiz(roomId)) return;
+
+        const quiz = new Quiz(roomId);
+        this.quizes.push(quiz);
+
+        console.log("Quiz created:", roomId);
+    }
+
     // ================= START QUIZ =================
-    public start(roomId: string) {
+    start(roomId: string) {
         const quiz = this.getQuiz(roomId);
         if (!quiz) return;
         quiz.start();
     }
 
     // ================= ADD QUESTION =================
-    public addProblem(
+    addProblem(
         roomId: string,
         problem: {
             title: string;
@@ -34,13 +44,13 @@ export class QuizManager {
         quiz.addProblem({
             ...problem,
             id: (globalProblemId++).toString(),
-            startTime: new Date().getTime(),
+            startTime: Date.now(),
             submissions: [],
         });
     }
 
     // ================= NEXT QUESTION =================
-    public next(roomId: string) {
+    next(roomId: string) {
         const quiz = this.getQuiz(roomId);
         if (!quiz) return;
         quiz.next();
@@ -48,7 +58,10 @@ export class QuizManager {
 
     // ================= ADD USER =================
     addUser(roomId: string, name: string) {
-        return this.getQuiz(roomId)?.addUser(name);
+        const quiz = this.getQuiz(roomId);
+        if (!quiz) return null;
+
+        return quiz.addUser(name);
     }
 
     // ================= SUBMIT ANSWER =================
@@ -58,7 +71,10 @@ export class QuizManager {
         problemId: string,
         submission: 0 | 1 | 2 | 3
     ) {
-        this.getQuiz(roomId)?.submit(userId, roomId, problemId, submission);
+        const quiz = this.getQuiz(roomId);
+        if (!quiz) return;
+
+        quiz.submit(userId, roomId, problemId, submission);
     }
 
     // ================= GET QUIZ =================
@@ -73,20 +89,13 @@ export class QuizManager {
         return quiz.getCurrentState();
     }
 
-    // ================= CREATE QUIZ =================
-    addQuiz(roomId: string) {
-        if (this.getQuiz(roomId)) return;
+    // 🔥🔥🔥 HARD DELETE ROOM (THIS IS THE KEY)
+    deleteRoom(roomId: string) {
+        console.log("Deleting room completely:", roomId);
 
-        const quiz = new Quiz(roomId);
-        this.quizes.push(quiz);
-    }
-
-    // 🔥🔥🔥 RESET QUIZ (NEW — IMPORTANT)
-    resetRoom(roomId: string) {
-        // Remove quiz completely
         this.quizes = this.quizes.filter(q => q.roomId !== roomId);
 
-        // Optional: reset problem counter for clean IDs
+        // reset problem ids for next quiz
         globalProblemId = 0;
     }
 }
