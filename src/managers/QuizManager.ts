@@ -22,7 +22,7 @@ export class QuizManager {
 
     console.log("Quiz created:", roomId);
 
-    /* ✅ SAVE ROOM TO DATABASE (SAFE) */
+    /* ✅ SAVE ROOM TO DATABASE */
     try {
       await QuizRoom.create({
         roomId,
@@ -34,6 +34,56 @@ export class QuizManager {
     } catch (err) {
       console.log("MongoDB room save failed:", err);
     }
+  }
+
+  // ================= GET ALL ROOMS =================
+  async getAllRooms() {
+    try {
+      return await QuizRoom.find({}, { roomId: 1, _id: 0 });
+    } catch (err) {
+      console.log("MongoDB getAllRooms failed:", err);
+      return [];
+    }
+  }
+
+  // ================= RESTART ROOM =================
+  async restartRoom(roomId: string) {
+    console.log("Restarting room:", roomId);
+
+    /* ✅ Get room from DB */
+    const dbRoom = await QuizRoom.findOne({ roomId });
+
+    if (!dbRoom) {
+      console.log("Room not found in MongoDB");
+      return;
+    }
+
+    /* ✅ Remove quiz from memory */
+    this.quizes = this.quizes.filter((q) => q.roomId !== roomId);
+
+    /* ✅ Create fresh Quiz instance */
+    const newQuiz = new Quiz(roomId);
+
+    /* ✅ Re-add old saved questions */
+    dbRoom.problems.forEach((p: any) => {
+      newQuiz.addProblem({
+        ...p,
+        id: (globalProblemId++).toString(),
+        startTime: Date.now(),
+        submissions: [],
+      });
+    });
+
+    /* ✅ Add restarted quiz back */
+    this.quizes.push(newQuiz);
+
+    /* ✅ Reset DB players list only */
+    await QuizRoom.updateOne(
+      { roomId },
+      { $set: { players: [] } }
+    );
+
+    console.log("Room restarted successfully:", roomId);
   }
 
   // ================= START QUIZ =================
@@ -64,14 +114,12 @@ export class QuizManager {
       submissions: [],
     });
 
-    /* ✅ SAVE QUESTION TO DATABASE */
+    /* ✅ Save question in MongoDB */
     try {
       await QuizRoom.updateOne(
         { roomId },
         { $push: { problems: problem } }
       );
-
-      console.log("Problem saved in MongoDB");
     } catch (err) {
       console.log("MongoDB problem save failed:", err);
     }
@@ -91,7 +139,7 @@ export class QuizManager {
 
     const userId = quiz.addUser(name);
 
-    /* ✅ SAVE PLAYER TO DATABASE */
+    /* ✅ Save player in DB */
     try {
       await QuizRoom.updateOne(
         { roomId },
@@ -105,8 +153,6 @@ export class QuizManager {
           },
         }
       );
-
-      console.log("Player saved in MongoDB:", name);
     } catch (err) {
       console.log("MongoDB player save failed:", err);
     }
@@ -139,7 +185,7 @@ export class QuizManager {
     return quiz.getCurrentState();
   }
 
-  // 🔥🔥🔥 HARD DELETE ROOM (WORKING FLOW NOT TOUCHED)
+  // ================= DELETE ROOM =================
   async deleteRoom(roomId: string) {
     console.log("Deleting room completely:", roomId);
 
@@ -147,7 +193,7 @@ export class QuizManager {
 
     globalProblemId = 0;
 
-    /* ✅ ALSO DELETE FROM DATABASE */
+    /* ✅ Delete from MongoDB */
     try {
       await QuizRoom.deleteOne({ roomId });
       console.log("Room deleted from MongoDB:", roomId);
