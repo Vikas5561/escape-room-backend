@@ -1,5 +1,16 @@
-import { IoManager } from './managers/IoManager';
-import { UserManager } from './managers/UserManager';
+import { IoManager } from "./managers/IoManager";
+import { UserManager } from "./managers/UserManager";
+
+/* ✅ MongoDB Connection Import */
+import { connectDB } from "./config/db";
+
+import dotenv from "dotenv";
+
+/* ✅ Load .env */
+dotenv.config();
+
+/* ✅ Connect MongoDB (Safe Addition) */
+connectDB();
 
 const io = IoManager.getIo();
 
@@ -11,6 +22,6 @@ console.log(`Socket server running on port ${PORT}`);
 
 const userManager = new UserManager();
 
-io.on('connection', (socket) => {
-    userManager.addUser(socket);
+io.on("connection", (socket) => {
+  userManager.addUser(socket);
 });
