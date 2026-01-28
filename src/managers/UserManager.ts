@@ -4,136 +4,98 @@ import { QuizManager } from "./QuizManager";
 const ADMIN_PASSWORD = "ADMIN_PASSWORD";
 
 export class UserManager {
-  private quizManager: QuizManager;
+    private quizManager: QuizManager;
 
-  constructor() {
-    this.quizManager = new QuizManager();
-  }
+    constructor() {
+        this.quizManager = new QuizManager();
+    }
 
-  addUser(socket: Socket) {
-    this.createHandlers(socket);
-  }
+    addUser(socket: Socket) {
+        this.createHandlers(socket);
+    }
 
-  private createHandlers(socket: Socket) {
-    // ================= USER JOIN =================
-    socket.on("join", async (data) => {
-      const { roomId, name } = data;
+    private createHandlers(socket: Socket) {
 
-      const quiz = this.quizManager.getQuiz(roomId);
-      if (!quiz) {
-        socket.emit("error", { message: "Room not found" });
-        return;
-      }
+        // ================= USER JOIN =================
+        socket.on("join", (data) => {
+            const { roomId, name } = data;
 
-      const userId = await this.quizManager.addUser(roomId, name);
+            const quiz = this.quizManager.getQuiz(roomId);
+            if (!quiz) {
+                socket.emit("error", { message: "Room not found" });
+                return;
+            }
 
-      socket.join(roomId);
+            const userId = this.quizManager.addUser(roomId, name);
 
-      socket.emit("init", {
-        userId,
-        state: this.quizManager.getCurrentState(roomId),
-      });
+            socket.join(roomId);
 
-      console.log(`User ${name} joined room ${roomId}`);
-    });
+            socket.emit("init", {
+                userId,
+                state: this.quizManager.getCurrentState(roomId),
+            });
 
-    // ================= ADMIN LOGIN =================
-    socket.on("joinAdmin", async (data) => {
-      if (data.password !== ADMIN_PASSWORD) {
-        socket.emit("adminAuth", { success: false });
-        return;
-      }
+            console.log(`User ${name} joined room ${roomId}`);
+        });
 
-      socket.emit("adminAuth", { success: true });
-      console.log("✅ Admin logged in!");
+        // ================= ADMIN LOGIN =================
+        socket.on("joinAdmin", (data) => {
+            if (data.password !== ADMIN_PASSWORD) {
+                socket.emit("adminAuth", { success: false });
+                return;
+            }
 
-      // =====================================================
-      // ✅ ADMIN: GET ALL ROOMS
-      // =====================================================
-      socket.on("getRooms", async () => {
-        const rooms = await this.quizManager.getAllRooms();
-        socket.emit("roomsList", rooms);
-      });
+            socket.emit("adminAuth", { success: true });
 
-      // =====================================================
-      // ✅ ADMIN: RESTART ROOM (FORCE USERS TO REJOIN)
-      // =====================================================
-      socket.on("restartRoom", async (data) => {
-        const roomId = data.roomId;
+            // CREATE QUIZ
+            socket.on("createQuiz", (data) => {
+                this.quizManager.addQuiz(data.roomId);
+                socket.emit("quizCreated", { roomId: data.roomId });
+            });
 
-        try {
-          await this.quizManager.restartRoom(roomId);
+            // ADD QUESTION
+            socket.on("createProblem", (data) => {
+                this.quizManager.addProblem(data.roomId, data.problem);
+                socket.emit("problemAdded", { roomId: data.roomId });
+            });
 
-          socket.emit("roomRestarted", { roomId });
+            // START QUIZ
+            socket.on("start", (data) => {
+                this.quizManager.start(data.roomId);
+            });
 
-          // ✅ Notify all players: Reset quiz state
-          socket.to(roomId).emit("reset");
+            // NEXT QUESTION
+            socket.on("next", (data) => {
+                this.quizManager.next(data.roomId);
+            });
 
-          // ✅ Kick all players back to Join Screen
-          socket.to(roomId).emit("forceRejoin");
+            // GET STATE
+            socket.on("getQuizState", (data) => {
+                const state = this.quizManager.getCurrentState(data.roomId);
+                socket.emit("quizStateUpdate", state);
+            });
 
-          console.log("🔄 Room restarted + Users forced to rejoin:", roomId);
-        } catch (err) {
-          socket.emit("error", {
-            message: "Failed to restart room",
-          });
-        }
-      });
+            // 🔥🔥🔥 END QUIZ (HARD DELETE)
+            socket.on("endQuiz", (data) => {
+                const { roomId } = data;
 
-      // =====================================================
-      // ✅ ADMIN: CREATE QUIZ
-      // =====================================================
-      socket.on("createQuiz", async (data) => {
-        await this.quizManager.addQuiz(data.roomId);
-        socket.emit("quizCreated", { roomId: data.roomId });
-      });
+                this.quizManager.deleteRoom(roomId);
 
-      // =====================================================
-      // ✅ ADMIN: ADD QUESTION
-      // =====================================================
-      socket.on("createProblem", async (data) => {
-        await this.quizManager.addProblem(data.roomId, data.problem);
-        socket.emit("problemAdded", { roomId: data.roomId });
-      });
+                // notify ALL clients
+                socket.to(roomId).emit("reset");
+                socket.emit("reset");
 
-      // =====================================================
-      // ✅ ADMIN: START QUIZ
-      // =====================================================
-      socket.on("start", (data) => {
-        this.quizManager.start(data.roomId);
-      });
+                console.log(`Room ${roomId} deleted by admin`);
+            });
+        });
 
-      // =====================================================
-      // ✅ ADMIN: NEXT QUESTION
-      // =====================================================
-      socket.on("next", (data) => {
-        this.quizManager.next(data.roomId);
-      });
+        // ================= SUBMIT ANSWER =================
+        socket.on("submit", (data) => {
+            const { userId, roomId, problemId, submission } = data;
 
-      // =====================================================
-      // ✅ ADMIN: END QUIZ (DELETE ROOM)
-      // =====================================================
-      socket.on("endQuiz", async (data) => {
-        const { roomId } = data;
+            if (![0, 1, 2, 3].includes(submission)) return;
 
-        await this.quizManager.deleteRoom(roomId);
-
-        socket.to(roomId).emit("reset");
-        socket.to(roomId).emit("forceRejoin");
-
-        socket.emit("reset");
-
-        console.log(`❌ Room ${roomId} deleted by admin`);
-      });
-    });
-
-    // ================= SUBMIT ANSWER =================
-    socket.on("submit", (data) => {
-      const { userId, roomId, problemId, submission } = data;
-
-      if (![0, 1, 2, 3].includes(submission)) return;
-
-      this.quizManager.submit(userId, roomId, problemId, submission);
-    });
-  }
+            this.quizManager.submit(userId, roomId, problemId, submission);
+        });
+    }
 }
