@@ -1,8 +1,8 @@
 import { IoManager } from "./managers/IoManager";
 import { AllowedSubmissions, Problem, User } from "./types/types";
 
-const PROBLEM_TIME_S = 15; // ✅ Question stays 15 seconds
-const WINNING_POINTS = 80; // ✅ Winner at 80 points
+const PROBLEM_TIME_S = 15;
+const WINNING_POINTS = 80;
 
 export class Quiz {
   public roomId: string;
@@ -20,8 +20,6 @@ export class Quiz {
     this.activeProblem = 0;
     this.users = [];
     this.currentState = "not_started";
-
-    console.log("Room created:", roomId);
   }
 
   // ================= ADD QUESTION =================
@@ -47,8 +45,6 @@ export class Quiz {
   // ================= START QUIZ =================
   start() {
     if (this.problems.length === 0) return;
-
-    console.log("Quiz started");
     this.setActiveProblem(this.problems[0]);
   }
 
@@ -58,56 +54,25 @@ export class Quiz {
 
     this.currentState = "question";
 
+    // Reset question timer
     problem.startTime = Date.now();
     problem.submissions = [];
 
+    // Reset submission state for all users
+    this.users.forEach((u) => {
+      u.hasSubmitted = false;
+    });
+
     IoManager.getIo().to(this.roomId).emit("problem", { problem });
 
-    console.log("Question sent:", problem.title);
+    console.log("Question started:", problem.title);
 
-    // ✅ After 15 seconds automatically show leaderboard
+    // ✅ After 15s leaderboard will be shown
     setTimeout(() => {
       if (!this.winner) {
         this.sendLeaderboard();
       }
     }, PROBLEM_TIME_S * 1000);
-  }
-
-  // ================= SEND LEADERBOARD =================
-  private sendLeaderboard() {
-    if (this.winner) return;
-
-    this.currentState = "leaderboard";
-
-    // Update player stages based on points
-    this.users.forEach((u) => {
-      u.stage = Math.min(Math.floor(u.points / 10) + 1, 9);
-      u.hasSubmitted = false;
-    });
-
-    const leaderboard = this.getLeaderboard();
-
-    IoManager.getIo().to(this.roomId).emit("leaderboard", {
-      leaderboard,
-      winner: this.winner,
-    });
-
-    console.log("Leaderboard sent");
-  }
-
-  // ================= NEXT QUESTION (ADMIN ONLY) =================
-  next() {
-    if (this.winner) return;
-
-    this.activeProblem++;
-
-    const nextProblem = this.problems[this.activeProblem];
-
-    if (nextProblem) {
-      this.setActiveProblem(nextProblem);
-    } else {
-      this.endQuiz();
-    }
   }
 
   // ================= SUBMIT ANSWER =================
@@ -123,7 +88,18 @@ export class Quiz {
     const user = this.users.find((u) => u.id === userId);
 
     if (!problem || !user) return;
+
+    // Prevent double submit
     if (user.hasSubmitted) return;
+
+    // ✅ FIX: Reject submissions after time is over
+    const now = Date.now();
+    const timePassed = (now - problem.startTime) / 1000;
+
+    if (timePassed > PROBLEM_TIME_S) {
+      console.log("❌ Submission ignored (time over):", user.name);
+      return;
+    }
 
     user.hasSubmitted = true;
 
@@ -133,12 +109,47 @@ export class Quiz {
       user.points += 10;
     }
 
-    console.log(user.name, "submitted", submission, "Correct:", isCorrect);
+    console.log(user.name, "answered", submission, "Correct:", isCorrect);
 
-    // ✅ Winner check at 80 points
+    // Winner check
     if (user.points >= WINNING_POINTS) {
       this.winner = user;
       this.declareWinner();
+    }
+  }
+
+  // ================= SEND LEADERBOARD =================
+  private sendLeaderboard() {
+    if (this.winner) return;
+
+    this.currentState = "leaderboard";
+
+    // Update movement stages
+    this.users.forEach((u) => {
+      u.stage = Math.min(Math.floor(u.points / 10) + 1, 9);
+      u.hasSubmitted = false;
+    });
+
+    IoManager.getIo().to(this.roomId).emit("leaderboard", {
+      leaderboard: this.getLeaderboard(),
+      winner: this.winner,
+    });
+
+    console.log("Leaderboard sent properly");
+  }
+
+  // ================= NEXT QUESTION =================
+  next() {
+    if (this.winner) return;
+
+    this.activeProblem++;
+
+    const nextProblem = this.problems[this.activeProblem];
+
+    if (nextProblem) {
+      this.setActiveProblem(nextProblem);
+    } else {
+      this.endQuiz();
     }
   }
 
@@ -150,8 +161,6 @@ export class Quiz {
       winner: this.winner,
       leaderboard: this.getLeaderboard(),
     });
-
-    console.log("🏆 WINNER:", this.winner?.name);
   }
 
   // ================= END QUIZ =================
@@ -162,20 +171,16 @@ export class Quiz {
       leaderboard: this.getLeaderboard(),
       winner: this.winner,
     });
-
-    console.log("Quiz finished");
   }
 
-  // ================= LEADERBOARD =================
+  // ================= LEADERBOARD SORT =================
   private getLeaderboard() {
     return this.users.sort((a, b) => b.points - a.points);
   }
 
   // ================= CURRENT STATE =================
   getCurrentState() {
-    if (this.currentState === "not_started") {
-      return { type: "not_started" };
-    }
+    if (this.currentState === "not_started") return { type: "not_started" };
 
     if (this.currentState === "question") {
       return {
