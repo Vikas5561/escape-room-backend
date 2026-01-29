@@ -3,9 +3,12 @@ import { UserManager } from "./managers/UserManager";
 
 const io = IoManager.getIo();
 
-io.listen(3000);
+// ✅ Render gives dynamic PORT
+const PORT = process.env.PORT || 3000;
 
-console.log("✅ Socket server running on port 3000");
+io.listen(Number(PORT));
+
+console.log("✅ Socket server running on port", PORT);
 
 const userManager = new UserManager();
 
